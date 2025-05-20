@@ -8,7 +8,10 @@ import { createSelector } from 'reselect';
 import { Spacer } from '@freecodecamp/ui';
 
 import { challengeTypes } from '../../../../../shared/config/challenge-types';
-import { SuperBlocks } from '../../../../../shared/config/curriculum';
+import {
+  chapterBasedSuperBlocks,
+  SuperBlocks
+} from '../../../../../shared/config/curriculum';
 import envData from '../../../../config/env.json';
 import { isAuditedSuperBlock } from '../../../../../shared/utils/is-audited';
 import Caret from '../../../assets/icons/caret';
@@ -16,7 +19,7 @@ import { Link } from '../../../components/helpers';
 import { completedChallengesSelector } from '../../../redux/selectors';
 import { playTone } from '../../../utils/tone';
 import { makeExpandedBlockSelector, toggleBlock } from '../redux';
-import { isGridBased, isProjectBased } from '../../../utils/curriculum-layout';
+import { isProjectBased } from '../../../utils/curriculum-layout';
 import { BlockLayouts, BlockTypes } from '../../../../../shared/config/blocks';
 import CheckMark from './check-mark';
 import Challenges from './challenges';
@@ -115,10 +118,6 @@ class Block extends Component<BlockProps> {
       return isProjectBased(challenge.challengeType, block);
     });
 
-    const isGridSuperBlock = challenges.some(challenge => {
-      return isGridBased(superBlock, challenge.challengeType);
-    });
-
     const isAudited = isAuditedSuperBlock(curriculumLocale, superBlock);
 
     const blockTitle = t(`intro:${superBlock}.blocks.${block}.title`);
@@ -192,10 +191,7 @@ class Block extends Component<BlockProps> {
             </div>
             <div className='map-title-completed course-title'>
               <CheckMark isCompleted={isBlockCompleted} />
-              <span
-                aria-hidden='true'
-                className='map-completed-count'
-              >{`${completedCount}/${challenges.length}`}</span>
+              <span aria-hidden='true'>{`${completedCount}/${challenges.length}`}</span>
               <span className='sr-only'>
                 ,{' '}
                 {t('learn.challenges-completed', {
@@ -403,17 +399,17 @@ class Block extends Component<BlockProps> {
       [BlockLayouts.ProjectList]: ProjectListBlock,
       [BlockLayouts.LegacyLink]: LegacyLinkBlock,
       [BlockLayouts.LegacyChallengeList]: LegacyChallengeListBlock,
-      [BlockLayouts.LegacyChallengeGrid]: LegacyChallengeGridBlock
+      [BlockLayouts.LegacyChallengeGrid]: LegacyChallengeGridBlock,
+      [BlockLayouts.DialogueGrid]: LegacyChallengeGridBlock
     };
 
     return (
       !isEmptyBlock && (
         <>
           {layoutToComponent[blockLayout]}
-          {(!isGridSuperBlock || isProjectBlock) &&
-            superBlock !== SuperBlocks.FullStackDeveloper && (
-              <Spacer size='m' />
-            )}
+          {!chapterBasedSuperBlocks.includes(superBlock) && (
+            <Spacer size='xs' />
+          )}
         </>
       )
     );

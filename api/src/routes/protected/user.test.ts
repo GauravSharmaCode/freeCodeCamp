@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import type { Prisma } from '@prisma/client';
+import { DailyCodingChallengeLanguage, type Prisma } from '@prisma/client';
 import { ObjectId } from 'mongodb';
 import _ from 'lodash';
 
@@ -13,7 +13,8 @@ import {
   devLogin,
   setupServer,
   superRequest,
-  createSuperRequest
+  createSuperRequest,
+  defaultUsername
 } from '../../../jest.utils';
 import { JWT_SECRET } from '../../utils/env';
 import {
@@ -75,6 +76,16 @@ const testUserData: Prisma.userCreateInput = {
         passed: false,
         examTimeInSeconds: 0
       }
+    }
+  ],
+  completedDailyCodingChallenges: [
+    {
+      id: '5900f36e1000cf542c50fe80',
+      completedDate: 1742941672524,
+      languages: [
+        DailyCodingChallengeLanguage.python,
+        DailyCodingChallengeLanguage.javascript
+      ]
     }
   ],
   partiallyCompletedChallenges: [{ id: '123', completedDate: 123 }],
@@ -217,6 +228,16 @@ const publicUserData = {
       }
     }
   ],
+  completedDailyCodingChallenges: [
+    {
+      id: '5900f36e1000cf542c50fe80',
+      completedDate: 1742941672524,
+      languages: [
+        DailyCodingChallengeLanguage.python,
+        DailyCodingChallengeLanguage.javascript
+      ]
+    }
+  ],
   completedExams: testUserData.completedExams,
   completedSurveys: [], // TODO: add surveys
   quizAttempts: testUserData.quizAttempts,
@@ -289,6 +310,7 @@ const baseProgressData = {
   isRelationalDatabaseCertV8: false,
   isCollegeAlgebraPyCertV8: false,
   completedChallenges: [],
+  completedDailyCodingChallenges: [],
   completedExams: [],
   savedChallenges: [],
   partiallyCompletedChallenges: [],
@@ -441,6 +463,55 @@ describe('userRoutes', () => {
           await fastifyTestInstance.prisma.examEnvironmentAuthorizationToken.count();
         expect(countAfter).toBe(0);
         expect(res.status).toBe(200);
+      });
+
+      test('handles concurrent requests to delete the same user', async () => {
+        const deletePromises = Array.from({ length: 2 }, () =>
+          superPost('/account/delete')
+        );
+
+        const responses = await Promise.all(deletePromises);
+
+        const userCount = await fastifyTestInstance.prisma.user.count({
+          where: { email: testUserData.email }
+        });
+        responses.forEach(response => {
+          expect(response.status).toBe(200);
+          expect(response.body).toStrictEqual({});
+        });
+        expect(userCount).toBe(0);
+      });
+
+      test("only deletes the logged in user's data", async () => {
+        await fastifyTestInstance.prisma.user.create({
+          data: {
+            ...testUserData,
+            email: 'an.random@user'
+          }
+        });
+        expect(await fastifyTestInstance.prisma.user.count()).toBe(2);
+
+        await superPost('/account/delete');
+
+        const userCount = await fastifyTestInstance.prisma.user.count();
+        expect(userCount).toBe(1);
+      });
+
+      test('logs if it is asked to delete a non-existent user', async () => {
+        const spy = jest.spyOn(fastifyTestInstance.log, 'warn');
+
+        const deletePromises = Array.from({ length: 2 }, () =>
+          superPost('/account/delete')
+        );
+
+        await Promise.all(deletePromises);
+
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0]).toEqual(
+          expect.arrayContaining([
+            `User with id ${defaultUserId} not found for deletion.`
+          ])
+        );
       });
     });
 
@@ -734,6 +805,7 @@ describe('userRoutes', () => {
           // missing in the user document.
           currentChallengeId: '',
           completedChallenges: [],
+          completedDailyCodingChallenges: [],
           completedExams: [],
           completedSurveys: [],
           partiallyCompletedChallenges: [],
@@ -802,29 +874,25 @@ describe('userRoutes', () => {
           reportDescription: 'Test Report'
         });
 
-        expect(response.statusCode).toBe(400);
+        expect(response.statusCode).toBe(404);
         expect(response.body).toStrictEqual({
           type: 'danger',
-          message: 'flash.provide-username'
+          message: 'flash.report-error'
         });
       });
 
       test('POST returns 400 for empty report', async () => {
         const response = await superPost('/user/report-user').send({
-          username: 'darth-vader',
+          username: testUserData.username,
           reportDescription: ''
         });
 
         expect(response.statusCode).toBe(400);
-        expect(response.body).toStrictEqual({
-          type: 'danger',
-          message: 'flash.provide-username'
-        });
       });
 
       test('POST sanitises report description', async () => {
         await superPost('/user/report-user').send({
-          username: 'darth-vader',
+          username: defaultUsername,
           reportDescription:
             '<script>const breath = "loud"</script>Luke, I am your father'
         });
@@ -846,7 +914,7 @@ describe('userRoutes', () => {
           }
         );
         const response = await superPost('/user/report-user').send({
-          username: 'darth-vader',
+          username: testUser.username,
           reportDescription: 'Luke, I am your father'
         });
 
@@ -855,11 +923,11 @@ describe('userRoutes', () => {
           from: 'team@freecodecamp.org',
           to: 'support@freecodecamp.org',
           cc: 'foo@bar.com',
-          subject: "Abuse Report : Reporting darth-vader's profile.",
+          subject: `Abuse Report : Reporting ${testUser.username}'s profile.`,
           text: `
 Hello Team,
 
-This is to report the profile of darth-vader.
+This is to report the profile of ${testUser.username}. ID: ${defaultUserId}.
 
 Report Details:
 
@@ -867,6 +935,7 @@ Luke, I am your father
 
 
 Reported by:
+ID: ${testUser.id}
 Username: ${testUser.username}
 Name:
 Email: foo@bar.com
@@ -953,21 +1022,15 @@ Thanks and regards,
         });
 
         it('handles invalid transcript urls', async () => {
-          mockedFetch.mockImplementationOnce(() =>
-            Promise.resolve({
-              ok: false
-            })
-          );
-
           const response = await superPost('/user/ms-username').send({
             msTranscriptUrl: 'https://www.example.com'
           });
 
           expect(response.body).toStrictEqual({
             type: 'error',
-            message: 'flash.ms.transcript.link-err-2'
+            message: 'flash.ms.transcript.link-err-1'
           });
-          expect(response.statusCode).toBe(404);
+          expect(response.statusCode).toBe(400);
         });
 
         it('handles the case that MS does not return a username', async () => {
@@ -979,7 +1042,8 @@ Thanks and regards,
           );
 
           const response = await superPost('/user/ms-username').send({
-            msTranscriptUrl: 'https://www.example.com'
+            msTranscriptUrl:
+              'https://learn.microsoft.com/en-us/users/not/transcript/8u6ert43q1p'
           });
 
           expect(response.body).toStrictEqual({
@@ -1009,7 +1073,8 @@ Thanks and regards,
           });
 
           const response = await superPost('/user/ms-username').send({
-            msTranscriptUrl: 'https://www.example.com'
+            msTranscriptUrl:
+              'https://learn.microsoft.com/en-us/users/mot01/transcript/8wert4'
           });
 
           expect(response.body).toStrictEqual({
@@ -1032,7 +1097,8 @@ Thanks and regards,
             })
           );
           const response = await superPost('/user/ms-username').send({
-            msTranscriptUrl: 'https://www.example.com'
+            msTranscriptUrl:
+              'https://learn.microsoft.com/en-us/users/mot01/transcript/8ert43q'
           });
 
           expect(response.body).toStrictEqual({
@@ -1054,7 +1120,8 @@ Thanks and regards,
           );
 
           await superPost('/user/ms-username').send({
-            msTranscriptUrl: 'https://www.example.com'
+            msTranscriptUrl:
+              'https://learn.microsoft.com/en-us/users/mot01/transcript/12345'
           });
 
           const linkedAccount =
@@ -1102,10 +1169,12 @@ Thanks and regards,
           });
 
           await superPost('/user/ms-username').send({
-            msTranscriptUrl: 'https://www.example.com'
+            msTranscriptUrl:
+              'https://learn.microsoft.com/en-us/users/mot01/transcript/8u6awert43q1plo'
           });
           await superPost('/user/ms-username').send({
-            msTranscriptUrl: 'https://www.example.com'
+            msTranscriptUrl:
+              'https://learn.microsoft.com/en-us/users/mot01/transcript/8u6awert43q1plo'
           });
 
           const linkedAccounts =
@@ -1291,18 +1360,41 @@ describe('Microsoft helpers', () => {
     const urlWithQueryParamsAndSlash = `${urlWithSlash}?foo=bar`;
 
     it('should extract the transcript id from the url', () => {
-      expect(getMsTranscriptApiUrl(urlWithoutSlash)).toBe(expectedUrl);
+      expect(getMsTranscriptApiUrl(urlWithoutSlash)).toEqual({
+        error: null,
+        data: expectedUrl
+      });
     });
 
     it('should handle trailing slashes', () => {
-      expect(getMsTranscriptApiUrl(urlWithSlash)).toBe(expectedUrl);
+      expect(getMsTranscriptApiUrl(urlWithSlash)).toEqual({
+        error: null,
+        data: expectedUrl
+      });
     });
 
     it('should ignore query params', () => {
-      expect(getMsTranscriptApiUrl(urlWithQueryParams)).toBe(expectedUrl);
-      expect(getMsTranscriptApiUrl(urlWithQueryParamsAndSlash)).toBe(
-        expectedUrl
-      );
+      expect(getMsTranscriptApiUrl(urlWithQueryParams)).toEqual({
+        error: null,
+        data: expectedUrl
+      });
+      expect(getMsTranscriptApiUrl(urlWithQueryParamsAndSlash)).toEqual({
+        error: null,
+        data: expectedUrl
+      });
+    });
+
+    it('should return an error for invalid URLs', () => {
+      const validBadUrl = 'https://www.example.com/invalid-url';
+      expect(getMsTranscriptApiUrl(validBadUrl)).toEqual({
+        error: expect.any(String),
+        data: null
+      });
+      const invalidUrl = ' ';
+      expect(getMsTranscriptApiUrl(invalidUrl)).toEqual({
+        error: expect.any(String),
+        data: null
+      });
     });
   });
 });

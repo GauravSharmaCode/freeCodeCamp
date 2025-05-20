@@ -6,7 +6,7 @@
   "private": true,
   "engines": {
     "node": ">=20",
-    "pnpm": ">=9"
+    "pnpm": ">=10"
   },
   "repository": {
     "type": "git",
@@ -19,7 +19,6 @@
   "author": "freeCodeCamp <team@freecodecamp.org>",
   "main": "none",
   "scripts": {
-    "preinstall": "npx -y only-allow pnpm",
     "audit-challenges": "pnpm run create:shared && tsx tools/challenge-auditor/index.ts",
     "analyze-bundle": "webpack-bundle-analyzer",
     "prebuild": "npm-run-all create:shared",
@@ -40,6 +39,7 @@
     "clean:server": "rm -rf ./api-server/lib",
     "create:shared": "tsc -p shared",
     "create-new-project": "cd ./tools/challenge-helper-scripts/ && pnpm run create-project",
+    "create-new-quiz": "cd ./tools/challenge-helper-scripts/ && pnpm run create-quiz",
     "predevelop": "npm-run-all -p create:shared -s build:curriculum",
     "develop": "npm-run-all -p develop:*",
     "develop:client": "cd ./client && pnpm run develop",
@@ -57,7 +57,6 @@
     "lint:ts": "tsc && tsc -p shared && tsc -p api && tsc -p client",
     "lint:prettier": "prettier --list-different .",
     "lint:css": "stylelint '**/*.css'",
-    "reload:server": "pm2 reload api-server/ecosystem.config.js",
     "preseed": "npm-run-all create:shared",
     "playwright:install-build-tools": "npx playwright install --with-deps",
     "rename-challenges": "tsx tools/challenge-helper-scripts/rename-challenge-files.ts",
@@ -85,7 +84,7 @@
     "test-utils": "jest utils",
     "prepare": "husky",
     "playwright:run": "playwright test",
-    "playwright:watch": "playwright test --ui"
+    "playwright:watch": "playwright test --ui-port=0"
   },
   "dependencies": {
     "dotenv": "16.4.5"
@@ -137,16 +136,36 @@
     "webpack-bundle-analyzer": "4.10.1",
     "yargs": "17.7.2"
   },
-  "packageManager": "pnpm@9.10.0+sha512.73a29afa36a0d092ece5271de5177ecbf8318d454ecd701343131b8ebc0c1a91c487da46ab77c8e596d6acf1461e3594ced4becedf8921b074fbd8653ed7051c",
+  "packageManager": "pnpm@10.10.0+sha512.d615db246fe70f25dcfea6d8d73dee782ce23e2245e3c4f6f888249fb568149318637dca73c2c5c8ef2a4ca0d5657fb9567188bfab47f566d1ee6ce987815c39",
   "pnpm": {
     "patchedDependencies": {
-      "@fastify/oauth2@7.8.1": "patches/@fastify__oauth2@7.8.1.patch"
+      "@fastify/oauth2@7.8.1": "patches/@fastify__oauth2@7.8.1.patch",
+      "@fastify/csrf-protection@6.4.1": "patches/@fastify__csrf-protection@6.4.1.patch"
     },
     "peerDependencyRules": {
       "allowedVersions": {
         "react-scrollable-anchor>react": "17",
         "react-scrollable-anchor>react-dom": "17"
       }
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@freecodecamp/ui",
+      "@prisma/client",
+      "@prisma/engines",
+      "core-js",
+      "ejs",
+      "es5-ext",
+      "esbuild",
+      "gatsby",
+      "gatsby-cli",
+      "gatsby-telemetry",
+      "lmdb",
+      "msgpackr-extract",
+      "msw",
+      "nodemon",
+      "prisma",
+      "puppeteer",
+      "sharp"
+    ]
   }
 }
